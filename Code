@@ -1,0 +1,368 @@
+!pip install tensorflow
+import pandas as pd
+import numpy as np
+import csv
+import io
+import os
+import zipfile
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv1D, MaxPooling1D, Flatten, Dropout
+from tensorflow.keras.utils import to_categorical
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, cross_validate,  cross_val_score, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, roc_curve, auc, RocCurveDisplay
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Flatten, Concatenate, Dense, Input, Add, Reshape, Attention, Multiply, Flatten, Dropout, BatchNormalization, MultiHeadAttention, LayerNormalization
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam, schedules
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
+from tensorflow.keras.regularizers import l2
+from sklearn.metrics import accuracy_score
+import time
+from tensorflow.keras.activations import softmax
+from time import time
+from sklearn.metrics import roc_auc_score, make_scorer
+import warnings
+
+zip_file_path = '/content/drive/MyDrive/Saved Models/database_respiratory.zip'
+extract_to = '/content/drive/MyDrive/extracted_folder'
+
+#DATA NORMALIZATION AND PREPROCESSING
+os.makedirs(extract_to, exist_ok=True)
+
+with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_to)
+
+print(f"Files extracted to {extract_to}")
+
+input_directory = '/content/drive/MyDrive/extracted_folder/database_respiratory'
+output_file = 'output_statistics.csv'
+
+results = []
+
+columns_of_interest = [
+    'Pressure [cmH2O]', 'Flow [L/s]', 'V_tidal [L]', 'Chest [mm]', 'Abd [mm]'
+]
+
+for filename in os.listdir(input_directory):
+    if filename.endswith('.csv'):
+        file_path = os.path.join(input_directory, filename)
+
+        df = pd.read_csv(file_path)
+
+        filtered_df = df[columns_of_interest]
+
+        column_means = filtered_df.mean()
+        column_stds = filtered_df.std()
+
+        file_results = {'file': filename}
+
+        for col in columns_of_interest:
+            file_results[f'{col}_mean'] = column_means[col]
+            file_results[f'{col}_std'] = column_stds[col]
+
+        results.append(file_results)
+
+result_df = pd.DataFrame(results)
+
+result_df.to_csv(output_file, index=False)
+
+file_path = '/content/output_statistics.csv'
+df = pd.read_csv(file_path)
+
+df.rename(columns={df.columns[0]: 'Subject Number'}, inplace=True)
+
+df['Subject Number'] = range(1, len(df) + 1)
+
+df.to_csv(file_path, index=False)
+
+df = pd.read_csv('/content/output_statistics.csv')
+df
+
+file_1 = '/content/database_1_resp-Devanshkalia.csv'
+file_2 = '/content/output_statistics.csv'
+
+df_1 = pd.read_csv(file_1)
+df_2 = pd.read_csv(file_2)
+
+
+if 'Subject Number' not in df_1.columns or 'Subject Number' not in df_2.columns:
+    print("Error: 'Subject number' column is missing from one of the files.")
+else:
+    synchronized_df = pd.merge(df_1, df_2, on='Subject Number', how='inner')
+
+    synchronized_output = '/content/synchronized_output.csv'
+    synchronized_df.to_csv(synchronized_output, index=False)
+
+file_path = '/content/synchronized_output.csv'
+df = pd.read_csv(file_path)
+
+df = df.iloc[:, :-1]
+
+df.to_csv(file_path, index=False)
+
+df = pd.read_csv('/content/synchronized_output.csv')
+df
+
+columns_to_convert = ['Asthama [Y/N]', 'Smoking [Y/N]', 'Vaping [Y/N]']
+for col in columns_to_convert:
+    data[col] = data[col].map({'Y': 1, 'N': 0})
+
+data
+
+plt.figure(figsize=(15, 15))
+
+num_features = len(data.select_dtypes(include='number').columns)
+num_cols = 3
+num_rows = (num_features + num_cols - 1) // num_cols
+
+for i, feature in enumerate(data.select_dtypes(include='number').columns):
+    plt.subplot(num_rows, num_cols, i+1)
+    sns.histplot(data=data, x=feature, bins=30, kde=True)
+    plt.title(f'{feature} ')
+plt.tight_layout()
+
+sns.countplot(x='Classification', data=data)
+plt.title('Distribution of Target (0 = Normal, 1 = COPD)')
+plt.show()
+
+#CORRELATION HEAT MAP
+plt.figure(figsize=(15,8))
+numeric_data = data.select_dtypes(include=np.number)
+sns.heatmap(numeric_data.corr(), annot = True, cmap="Blues")
+plt.show()
+X = data.drop('Classification', axis=True)
+y = data['Classification']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+#RANDOM FOREST MODEL
+RF = RandomForestClassifier( max_depth = 3 , random_state = 0)
+RF.fit(X_train, y_train)
+RF_pred = RF.predict(X_test)
+RF_pred
+RF_pred = RF.predict(X_test)
+print(classification_report(y_test, RF_pred))
+
+conf_matrix = confusion_matrix(y_test, RF_pred)
+
+# Plot confusion matrix with increased font size
+plt.figure(figsize=(6, 5))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', annot_kws={"size": 24})  # Adjust "size" as needed
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.title("Confusion Matrix", fontsize=14)
+plt.show()
+
+# Get predicted probabilities
+RF_probs = RF.predict_proba(X_test)[:, 1]  # Take probability of the positive class
+
+# Calculate ROC curve and AUC
+fpr, tpr, _ = roc_curve(y_test, RF_probs)
+roc_auc = auc(fpr, tpr)
+
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', label=f'ROC curve (AUC = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', linestyle='--')  # Diagonal line
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc="lower right")
+plt.show()
+
+#RANDOM FOREST WITH HYPERPARAMETER TUNING
+param_grid = {
+    'n_estimators': [100, 200, 300],
+    'max_depth': [5, 10, 20],
+    'min_samples_split': [2, 5, 10]
+}
+
+grid_search = GridSearchCV(RandomForestClassifier(), param_grid, cv=5, scoring='accuracy')
+grid_search.fit(X_train, y_train)
+
+print("Best parameters found:", grid_search.best_params_)
+print("Best cross-validation score: {:.4f}".format(grid_search.best_score_))
+
+best_rf = grid_search.best_estimator_
+y_pred_rf = best_rf.predict(X_test)
+accuracy_rf = accuracy_score(y_test, y_pred_rf)
+print(f"Random Forest Test Accuracy after tuning: {accuracy_rf:.4f}")
+
+best_rf = grid_search.best_estimator_
+print(classification_report(y_test, y_pred_rf))
+
+# Generate the confusion matrix for Random Forest
+cm_rf = confusion_matrix(y_test, y_pred_rf)
+
+# Plotting the confusion matrix with increased font size
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Normal', 'Abnormal'],
+            yticklabels=['Normal', 'Abnormal'],
+            annot_kws={"size": 24})  # Increase font size here
+plt.title('Confusion Matrix - RandomForestClassifier', fontsize=14)
+plt.xlabel('Predicted', fontsize=12)
+plt.ylabel('Actual', fontsize=12)
+plt.show()
+
+# Get predicted probabilities for the positive class
+y_pred_prob_rf = best_rf.predict_proba(X_test)[:, 1]  # Get the probabilities for the positive class
+
+# Calculate ROC curve and AUC
+fpr, tpr, _ = roc_curve(y_test, y_pred_prob_rf)
+roc_auc = auc(fpr, tpr)
+
+# Plot the ROC curve
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', label=f'ROC curve (AUC = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', linestyle='--')  # Diagonal line
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc="lower right")
+plt.show()
+
+#FEEDFORWARD NEURAL NETWORK 
+X_train_reshaped = X_train.reshape(-1, X_train.shape[1], 1)
+X_test_reshaped = X_test.reshape(-1, X_test.shape[1], 1)
+model = Sequential()
+model.add(Dense(11,activation='relu',input_dim=19))
+model.add(Dense(1,activation='sigmoid'))
+model.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
+
+model.summary()
+
+early_stopping = EarlyStopping(monitor='val_loss',patience=10)
+
+history = model.fit(X_train_reshaped ,y_train,epochs=300,validation_data=(X_test_reshaped, y_test),callbacks=[early_stopping])
+X_test_reshaped = X_test_reshaped.reshape(X_test_reshaped.shape[0], -1)
+
+model_pred = (model.predict(X_test_reshaped) > 0.5).astype(int).flatten()
+print(classification_report(y_test, model_pred))
+
+# Generate the confusion matrix
+conf_matrix = confusion_matrix(y_test, model_pred)
+
+# Plotting the confusion matrix with increased font size
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            annot_kws={"size": 24})  # Increase font size here
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.title("Confusion Matrix", fontsize=14)
+plt.show()
+
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.legend()
+plt.show()
+
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.show()
+Y_pred_prob = model.predict(X_test_reshaped)
+fpr, tpr, thresholds = roc_curve(y_test, Y_pred_prob)
+roc_auc = auc(fpr, tpr)
+
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')  # Diagonal line
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+plt.show()
+
+print(f"AUC Score: {roc_auc:.2f}")
+
+#FEEDFORWARD NEURAL NETWORK WITH ATTENTION MECHANISM 
+input_layer = Input(shape=(X_train.shape[1],))
+
+# First Dense layer
+x = Dense(64, activation='relu')(input_layer)
+x = Dropout(0.2)(x)
+
+# Second Dense layer
+x = Dense(32, activation='relu')(x)
+x = Dropout(0.3)(x)
+
+# Third Dense layer
+x = Dense(16, activation='relu')(x)
+x = Dropout(0.2)(x)
+
+# Reshape the output for the attention mechanism (need 3D shape)
+x = Reshape((-1, 16))(x)
+
+# Multi-head attention layer
+query = key = value = x
+x = MultiHeadAttention(num_heads=4, key_dim=16)(query, key, value)
+x = LayerNormalization()(x)
+
+# Fully connected layer after attention
+output_layer = Dense(1, activation='sigmoid')(x)
+
+model = Model(inputs=input_layer, outputs=output_layer)
+
+model.compile(optimizer=Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+model.summary()
+early_stopping = EarlyStopping(monitor='val_loss', patience=10)
+
+# Train the model
+history = model.fit(X_train_reshaped, y_train, epochs=300, validation_data=(X_test_reshaped, y_test), callbacks=[early_stopping])
+
+model_pred = (model.predict(X_test_reshaped) > 0.5).astype(int).flatten()
+
+# Classification report
+print(classification_report(y_test, model_pred))
+
+# Confusion matrix
+conf_matrix = confusion_matrix(y_test, model_pred)
+
+# Plotting the confusion matrix with increased font size
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            annot_kws={"size": 24})  # Increase font size here
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.title("Confusion Matrix", fontsize=14)
+plt.show()
+
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.legend()
+plt.show()
+
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.show()
+
+Y_pred_prob = model.predict(X_test)
+
+# Flatten the predictions to 1D
+Y_pred_prob = Y_pred_prob.ravel()
+
+fpr, tpr, thresholds = roc_curve(y_test, Y_pred_prob)
+roc_auc = auc(fpr, tpr)
+
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')  # Diagonal line
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+plt.show()
+
+print(f"AUC Score: {roc_auc:.2f}")
